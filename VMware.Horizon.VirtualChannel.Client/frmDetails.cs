@@ -28,7 +28,7 @@ namespace VMware.Horizon.VirtualChannel.Client
             if (Runtime.HorizonMonitor.Initialise())
             {
 
-                System.Threading.Thread MonitorThread = new Thread(Runtime.HorizonMonitor.Start);
+                var MonitorThread = new Thread(Runtime.HorizonMonitor.Start);
                 MonitorThread.Start();
                 
             }
@@ -67,7 +67,7 @@ namespace VMware.Horizon.VirtualChannel.Client
 
         private void HorizonMontor_ThreadMessage(int severity, string message)
         {
-            string Entry = string.Format("Sev: {0} - Message: {1}", severity, message);
+            var Entry = $"Sev: {severity} - Message: {message}";
             if (lbDebug.InvokeRequired)
             {
                 lbDebug.Invoke((Action<int, string>)HorizonMontor_ThreadMessage, severity, message);
@@ -105,11 +105,6 @@ namespace VMware.Horizon.VirtualChannel.Client
         {
             Visible = false;
 
-        }
-
-        private void tsmiDetails_Click(object sender, EventArgs e)
-        {
-            this.Visible = true;
         }
     }
 }

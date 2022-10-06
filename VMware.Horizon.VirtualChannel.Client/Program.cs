@@ -17,16 +17,15 @@ namespace VMware.Horizon.VirtualChannel.Client
         {
             if (!RegistryHelpers.ClientHelpers.IsAgentInstalled())
             {
-                MessageBox.Show("This app cannot function without a horizon client", "Horizon Client Missing", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("This app cannot function without a horizon client", "Horizon Client Missing",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             else
             {
-
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 Application.Run(new frmDetails());
             }
-            
         }
     }
 }

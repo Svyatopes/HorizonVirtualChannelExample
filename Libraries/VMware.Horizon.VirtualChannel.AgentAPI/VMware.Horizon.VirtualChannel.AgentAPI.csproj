@@ -32,7 +32,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Newtonsoft.Json, Version=12.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
-      <HintPath>..\packages\Newtonsoft.Json.12.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
+      <HintPath>..\..\packages\Newtonsoft.Json.12.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -48,9 +48,6 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\VMware.Horizon.RDPVCBridge\VMware.Horizon.VirtualChannel.RDPVCBridgeInterop.csproj">
       <Project>{0c9e1536-a4b1-4b0e-9a2b-eeac7238fc8a}</Project>
       <Name>VMware.Horizon.VirtualChannel.RDPVCBridgeInterop</Name>
@@ -63,6 +60,9 @@
       <Project>{2d6dafc7-fef4-40db-ba6e-da25df71b53c}</Project>
       <Name>VMware.Horizon.VirtualChannel.RegistryHelpers</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

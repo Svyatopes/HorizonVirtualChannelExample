@@ -48,7 +48,4 @@
     <Compile Include="VirtualChannelStructures.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <PropertyGroup>
-    <PostBuildEvent>copy /Y "$(targetpath)" "\\nas\lab\VirtChannelTest"</PostBuildEvent>
-  </PropertyGroup>
 </Project>

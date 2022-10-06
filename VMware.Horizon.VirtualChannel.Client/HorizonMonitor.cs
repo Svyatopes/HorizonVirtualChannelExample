@@ -1,17 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using static VMware.Horizon.VirtualChannel.PipeMessages.v1;
+using System.Threading;
 using NAudio.CoreAudioApi;
-using Newtonsoft.Json.Linq;
-using VMwareHorizonClientController;
-using System.ServiceModel.Dispatcher;
 using Newtonsoft.Json;
-using System.Windows.Forms;
-using System.Net.Http;
 using Newtonsoft.Json.Converters;
+using Newtonsoft.Json.Linq;
+using VMware.Horizon.VirtualChannel.RDPVCBridgeInterop;
+using VMwareHorizonClientController;
+using static VMware.Horizon.VirtualChannel.PipeMessages.v1;
 
 namespace VMware.Horizon.VirtualChannel.Client
 {
@@ -19,10 +15,10 @@ namespace VMware.Horizon.VirtualChannel.Client
     {
         private void SetVolumeStatus(VolumeStatus sv)
         {
-            using (NAudio.CoreAudioApi.MMDeviceEnumerator en = new NAudio.CoreAudioApi.MMDeviceEnumerator())
+            using (var en = new MMDeviceEnumerator())
             {
-
-                var device = en.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.Role.Console);
+                var device = en.GetDefaultAudioEndpoint(DataFlow.Render,
+                    Role.Console);
                 device.AudioEndpointVolume.Mute = sv.Muted;
                 device.AudioEndpointVolume.MasterVolumeLevelScalar = sv.VolumeLevel;
             }
@@ -30,12 +26,12 @@ namespace VMware.Horizon.VirtualChannel.Client
 
         private VolumeStatus GetVolume()
         {
-            using (NAudio.CoreAudioApi.MMDeviceEnumerator en = new NAudio.CoreAudioApi.MMDeviceEnumerator())
+            using (MMDeviceEnumerator en = new MMDeviceEnumerator())
             {
-
-                var device = en.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.Role.Console);
-                return new VolumeStatus(device.AudioEndpointVolume.Mute, device.AudioEndpointVolume.MasterVolumeLevelScalar);
-
+                var device = en.GetDefaultAudioEndpoint(DataFlow.Render,
+                    Role.Console);
+                return new VolumeStatus(device.AudioEndpointVolume.Mute,
+                    device.AudioEndpointVolume.MasterVolumeLevelScalar);
             }
         }
 
@@ -43,20 +39,22 @@ namespace VMware.Horizon.VirtualChannel.Client
         {
             if (data.Muted)
             {
-                this.ThreadMessage?.Invoke(3, "Volume Muted");
+                ThreadMessage?.Invoke(3, "Volume Muted");
             }
             else
             {
-                this.ThreadMessage?.Invoke(3, "Volume changed to: " + data.MasterVolume.ToString());
+                ThreadMessage?.Invoke(3, "Volume changed to: " + data.MasterVolume.ToString());
             }
         }
 
 
         public event ThreadMessageCallback ThreadMessage;
+
         public delegate void ThreadMessageCallback(int severity, string message);
 
         public bool isClosing = false;
         public event ThreadExceptionHandler ThreadException;
+
         public delegate void ThreadExceptionHandler(Exception ex);
 
         public string BatteryStatus = "";
@@ -71,12 +69,10 @@ namespace VMware.Horizon.VirtualChannel.Client
 
         public bool Initialise()
         {
-
-
             /// Open Audio Callbacks
             /// 
-            en = new NAudio.CoreAudioApi.MMDeviceEnumerator();
-            device = en.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.Role.Console);
+            en = new MMDeviceEnumerator();
+            device = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
             device.AudioEndpointVolume.OnVolumeNotification += AudioEndpointVolume_OnVolumeNotification;
             GC.SuppressFinalize(en);
             GC.SuppressFinalize(device);
@@ -86,7 +82,8 @@ namespace VMware.Horizon.VirtualChannel.Client
             /// Open Horizon Client Listener
             /// 
             vmhc = (IVMwareHorizonClient4)new VMwareHorizonClient();
-            IVMwareHorizonClientEvents5 HorizonEvents = (IVMwareHorizonClientEvents5)new VMwareHorizonClientEvents(this);
+            IVMwareHorizonClientEvents5
+                HorizonEvents = (IVMwareHorizonClientEvents5)new VMwareHorizonClientEvents(this);
             vmhc.Advise2(HorizonEvents, VmwHorizonClientAdviseFlags.VmwHorizonClientAdvise_DispatchCallbacksOnUIThread);
             GC.SuppressFinalize(vmhc);
             ThreadMessage?.Invoke(3, "Opened Horizon API");
@@ -107,12 +104,11 @@ namespace VMware.Horizon.VirtualChannel.Client
 
         public void Start()
         {
-
             try
             {
                 while (!isClosing)
                 {
-                    System.Threading.Thread.Sleep(500);
+                    Thread.Sleep(500);
                 }
 
                 en.Dispose();
@@ -125,7 +121,8 @@ namespace VMware.Horizon.VirtualChannel.Client
             }
             catch (Exception ex)
             {
-                this.ThreadMessage?.Invoke(1, string.Format("The Horizon Monitor thread reported a fatal Exception: {0}", ex.ToString()));
+                this.ThreadMessage?.Invoke(1,
+                    string.Format("The Horizon Monitor thread reported a fatal Exception: {0}", ex.ToString()));
                 this.ThreadException?.Invoke(ex);
             }
         }
@@ -143,8 +140,16 @@ namespace VMware.Horizon.VirtualChannel.Client
                 mName = name;
                 mOptions = options;
             }
-            public string name { get { return mName; } }
-            public uint options { get { return mOptions; } }
+
+            public string name
+            {
+                get { return mName; }
+            }
+
+            public uint options
+            {
+                get { return mOptions; }
+            }
 
             private string mName;
             private uint mOptions;
@@ -152,7 +157,6 @@ namespace VMware.Horizon.VirtualChannel.Client
 
         public class VMwareHorizonVirtualChannelEvents : IVMwareHorizonClientVChanEvents
         {
-
             public IVMwareHorizonClientVChan HorizonClientVirtualChannel = null;
             private HorizonMonitor CallbackObject;
 
@@ -160,45 +164,57 @@ namespace VMware.Horizon.VirtualChannel.Client
             {
                 CallbackObject = callback;
             }
+
             public void ConnectEventProc(uint serverId, string sessionToken, uint eventType, Array eventData)
             {
-                RDPVCBridgeInterop.VirtualChannelStructures.ChannelEvents currentEventType = (RDPVCBridgeInterop.VirtualChannelStructures.ChannelEvents)eventType;
+                VirtualChannelStructures.ChannelEvents currentEventType =
+                    (VirtualChannelStructures.ChannelEvents)eventType;
                 CallbackObject.ThreadMessage?.Invoke(3, "ConnectEventProc() called: " + currentEventType.ToString());
                 //  SharedObjects.hvm.ThreadMessage?.Invoke(3, "ConnectEventProc() called ");
 
-                if (eventType == (uint)RDPVCBridgeInterop.VirtualChannelStructures.ChannelEvents.Connected)
+                if (eventType == (uint)VirtualChannelStructures.ChannelEvents.Connected)
 
                 {
                     try
                     {
-                        HorizonClientVirtualChannel.VirtualChannelOpen(serverId, sessionToken, "VVCAM", out mChannelHandle);
+                        HorizonClientVirtualChannel.VirtualChannelOpen(serverId, sessionToken, "VVCAM",
+                            out mChannelHandle);
                         CallbackObject.ThreadMessage?.Invoke(3, "!! VirtualChannelOpen() succeeded");
                     }
                     catch (Exception ex)
                     {
-                        CallbackObject.ThreadMessage?.Invoke(3, string.Format("VirtualChannelOpen() failed: {0}", ex.ToString()));
+                        CallbackObject.ThreadMessage?.Invoke(3,
+                            string.Format("VirtualChannelOpen() failed: {0}", ex.ToString()));
                         mChannelHandle = 0;
                     }
                 }
             }
+
             public void InitEventProc(uint serverId, string sessionToken, uint rc)
             {
                 CallbackObject.ThreadMessage?.Invoke(3, "InitEventProc()");
             }
-            public void ReadEventProc(uint serverId, string sessionToken, uint channelHandle, uint eventType, Array eventData, uint totalLength, uint dataFlags)
-            {
-                RDPVCBridgeInterop.VirtualChannelStructures.ChannelEvents currentEventType = (RDPVCBridgeInterop.VirtualChannelStructures.ChannelEvents)eventType;
-                RDPVCBridgeInterop.VirtualChannelStructures.ChannelFlags cf = (RDPVCBridgeInterop.VirtualChannelStructures.ChannelFlags)dataFlags;
-                CallbackObject.ThreadMessage?.Invoke(3, "ReadEventProc(): " + currentEventType.ToString() + " - Flags: " + cf.ToString() + " - Length: " + totalLength);
 
-                bool isFirst = (dataFlags & (uint)RDPVCBridgeInterop.VirtualChannelStructures.ChannelFlags.First) != 0;
-                bool isLast = (dataFlags & (uint)RDPVCBridgeInterop.VirtualChannelStructures.ChannelFlags.Last) != 0;
+            public void ReadEventProc(uint serverId, string sessionToken, uint channelHandle, uint eventType,
+                Array eventData, uint totalLength, uint dataFlags)
+            {
+                VirtualChannelStructures.ChannelEvents currentEventType =
+                    (VirtualChannelStructures.ChannelEvents)eventType;
+                VirtualChannelStructures.ChannelFlags cf =
+                    (VirtualChannelStructures.ChannelFlags)dataFlags;
+                CallbackObject.ThreadMessage?.Invoke(3,
+                    "ReadEventProc(): " + currentEventType.ToString() + " - Flags: " + cf.ToString() + " - Length: " +
+                    totalLength);
+
+                bool isFirst = (dataFlags & (uint)VirtualChannelStructures.ChannelFlags.First) != 0;
+                bool isLast = (dataFlags & (uint)VirtualChannelStructures.ChannelFlags.Last) != 0;
 
                 if (isFirst)
                 {
                     mPingTestMsg = new Byte[totalLength];
                     mPingTestCurLen = 0;
                 }
+
                 eventData.CopyTo(mPingTestMsg, mPingTestCurLen);
                 mPingTestCurLen += eventData.Length;
 
@@ -206,12 +222,15 @@ namespace VMware.Horizon.VirtualChannel.Client
                 {
                     if (totalLength != mPingTestMsg.Length)
                     {
-                        CallbackObject.ThreadMessage?.Invoke(3, "Received {mPingTestMsg.Length} bytes but expected {totalLength} bytes!");
+                        CallbackObject.ThreadMessage?.Invoke(3,
+                            "Received {mPingTestMsg.Length} bytes but expected {totalLength} bytes!");
                     }
 
-                    string message = RDPVCBridgeInterop.BinaryConverters.BinaryToString(mPingTestMsg);
-                    ChannelCommand cc = Newtonsoft.Json.JsonConvert.DeserializeObject<ChannelCommand>(message);
-                    CallbackObject.ThreadMessage?.Invoke(3, "Received: " + cc.CommandType.ToString() + " = " + RDPVCBridgeInterop.BinaryConverters.BinaryToString(mPingTestMsg));
+                    string message = BinaryConverters.BinaryToString(mPingTestMsg);
+                    ChannelCommand cc = JsonConvert.DeserializeObject<ChannelCommand>(message);
+                    CallbackObject.ThreadMessage?.Invoke(3,
+                        "Received: " + cc.CommandType + " = " +
+                        BinaryConverters.BinaryToString(mPingTestMsg));
 
                     try
                     {
@@ -221,13 +240,19 @@ namespace VMware.Horizon.VirtualChannel.Client
                                 JObject jo = (JObject)cc.CommandParameters;
                                 VolumeStatus sv = jo.ToObject<VolumeStatus>();
                                 CallbackObject.SetVolumeStatus(sv);
-                                HorizonClientVirtualChannel.VirtualChannelWrite(serverId, sessionToken, channelHandle, RDPVCBridgeInterop.BinaryConverters.StringToBinary(Newtonsoft.Json.JsonConvert.SerializeObject(new ChannelResponse())));
+                                HorizonClientVirtualChannel.VirtualChannelWrite(serverId, sessionToken, channelHandle,
+                                    BinaryConverters.StringToBinary(
+                                        JsonConvert.SerializeObject(new ChannelResponse())));
                                 break;
                             case CommandType.Probe:
-                                HorizonClientVirtualChannel.VirtualChannelWrite(serverId, sessionToken, channelHandle, RDPVCBridgeInterop.BinaryConverters.StringToBinary(Newtonsoft.Json.JsonConvert.SerializeObject(new ChannelResponse())));
+                                HorizonClientVirtualChannel.VirtualChannelWrite(serverId, sessionToken, channelHandle,
+                                    BinaryConverters.StringToBinary(
+                                        JsonConvert.SerializeObject(new ChannelResponse())));
                                 break;
                             case CommandType.GetVolume:
-                                HorizonClientVirtualChannel.VirtualChannelWrite(serverId, sessionToken, channelHandle, RDPVCBridgeInterop.BinaryConverters.StringToBinary(Newtonsoft.Json.JsonConvert.SerializeObject(CallbackObject.GetVolume())));
+                                HorizonClientVirtualChannel.VirtualChannelWrite(serverId, sessionToken, channelHandle,
+                                    BinaryConverters.StringToBinary(
+                                        JsonConvert.SerializeObject(CallbackObject.GetVolume())));
                                 break;
                             default:
                                 break;
@@ -235,7 +260,8 @@ namespace VMware.Horizon.VirtualChannel.Client
                     }
                     catch (Exception ex)
                     {
-                        CallbackObject.ThreadMessage?.Invoke(3, string.Format("VirtualChannelWrite failed: {0}", ex.ToString()));
+                        CallbackObject.ThreadMessage?.Invoke(3,
+                            string.Format("VirtualChannelWrite failed: {0}", ex.ToString()));
                     }
                 }
             }
@@ -246,9 +272,9 @@ namespace VMware.Horizon.VirtualChannel.Client
             Byte[] mServerPingFragment = new byte[] { 0x50 /* 'P' */, 0x69 /* 'i' */, 0x6E /* 'n' */, 0x67 /* 'g' */ };
             Byte[] mClientPingFragment = new byte[] { 0x50 /* 'P' */, 0x6F /* 'o' */, 0x6E /* 'n' */, 0x67 /* 'g' */ };
         }
+
         public class VMwareHorizonClientEvents : IVMwareHorizonClientEvents5
         {
-
             public class Helpers
             {
                 [Flags]
@@ -259,6 +285,7 @@ namespace VMware.Horizon.VirtualChannel.Client
                     VmwHorizonClientProtocol_PCoIP = 2,
                     VmwHorizonClientProtocol_Blast = 4
                 }
+
                 [Flags]
                 public enum LaunchItemType
                 {
@@ -282,8 +309,10 @@ namespace VMware.Horizon.VirtualChannel.Client
 
                     [JsonConverter(typeof(StringEnumConverter))]
                     public SupportedProtocols supportedProtocols { get; set; }
+
                     [JsonConverter(typeof(StringEnumConverter))]
                     public VmwHorizonClientProtocol defaultProtocol { get; set; }
+
                     public launchItem(IVMwareHorizonClientLaunchItemInfo item)
                     {
                         name = item.name;
@@ -293,6 +322,7 @@ namespace VMware.Horizon.VirtualChannel.Client
                         defaultProtocol = item.defaultProtocol;
                     }
                 }
+
                 public class LaunchItem2
                 {
                     public string name { get; set; }
@@ -309,6 +339,7 @@ namespace VMware.Horizon.VirtualChannel.Client
                     public VmwHorizonClientProtocol defaultProtocol { get; set; }
 
                     public uint hasRemotableAssets { get; set; }
+
                     public LaunchItem2(IVMwareHorizonClientLaunchItemInfo2 i)
                     {
                         name = i.name;
@@ -328,6 +359,7 @@ namespace VMware.Horizon.VirtualChannel.Client
                     {
                         returnList.Add(new launchItem((IVMwareHorizonClientLaunchItemInfo)item));
                     }
+
                     return returnList;
                 }
 
@@ -338,6 +370,7 @@ namespace VMware.Horizon.VirtualChannel.Client
                     {
                         returnList.Add(new LaunchItem2((IVMwareHorizonClientLaunchItemInfo2)item));
                     }
+
                     return returnList;
                 }
             }
@@ -373,37 +406,40 @@ namespace VMware.Horizon.VirtualChannel.Client
             {
                 IVMwareHorizonClientServerInfo Info = (IVMwareHorizonClientServerInfo)serverInfo;
                 DispatchMessage(3, string.Format("Connecting, Server Address: {0}, ID: {1}, Type:{2} ",
-                   Info.serverAddress, Info.serverId, Info.serverType.ToString()));
+                    Info.serverAddress, Info.serverId, Info.serverType.ToString()));
             }
 
             public void OnConnectFailed(uint serverId, string errorMessage)
             {
                 DispatchMessage(3, string.Format("Connect Failed, Server ID: {0}, Message: {1}",
-                            serverId, errorMessage));
+                    serverId, errorMessage));
             }
 
             public void OnAuthenticationRequested(uint serverId, VmwHorizonClientAuthType authType)
             {
                 DispatchMessage(3, string.Format("Authentication Requested, Server ID: {0}, AuthType: {1}",
-                           serverId, authType.ToString()));
+                    serverId, authType.ToString()));
             }
 
             public void OnAuthenticating(uint serverId, VmwHorizonClientAuthType authType, string user)
             {
                 DispatchMessage(3, string.Format("Authenticating, Server ID: {0}, AuthType: {1}, User: {2}",
-                            serverId, authType.ToString(), user));
+                    serverId, authType.ToString(), user));
             }
 
             public void OnAuthenticationDeclined(uint serverId, VmwHorizonClientAuthType authType)
             {
                 DispatchMessage(3, string.Format("Authentication Declined, Server ID: {0}, AuthType: {1}",
-                           serverId, authType.ToString()));
+                    serverId, authType.ToString()));
             }
 
-            public void OnAuthenticationFailed(uint serverId, VmwHorizonClientAuthType authType, string errorMessage, int retryAllowed)
+            public void OnAuthenticationFailed(uint serverId, VmwHorizonClientAuthType authType, string errorMessage,
+                int retryAllowed)
             {
-                DispatchMessage(3, string.Format("Authentication Failed, Server ID: {0}, AuthType: {1}, Error: {2}, retry allowed?: {3}",
-                            serverId, authType.ToString(), errorMessage, retryAllowed));
+                DispatchMessage(3,
+                    string.Format(
+                        "Authentication Failed, Server ID: {0}, AuthType: {1}, Error: {2}, retry allowed?: {3}",
+                        serverId, authType.ToString(), errorMessage, retryAllowed));
             }
 
             public void OnLoggedIn(uint serverId)
@@ -419,127 +455,147 @@ namespace VMware.Horizon.VirtualChannel.Client
             public void OnReceivedLaunchItems(uint serverId, Array launchItems)
             {
                 DispatchMessage(3, string.Format("Received Launch Items, Server ID: {0}, Item Count: {1}", serverId,
-                            launchItems.Length));
+                    launchItems.Length));
                 var Items = Helpers.GetLaunchItems(launchItems);
                 foreach (var item in Items)
                 {
-                    DispatchMessage(3, String.Format("Launch Item: Server ID: {0}, Name: {1}, Type: {2}, ID: {3}", serverId, item.name, item.type.ToString(), item.id));
-
+                    DispatchMessage(3,
+                        String.Format("Launch Item: Server ID: {0}, Name: {1}, Type: {2}, ID: {3}", serverId, item.name,
+                            item.type.ToString(), item.id));
                 }
             }
 
-            public void OnLaunchingItem(uint serverId, VmwHorizonLaunchItemType type, string launchItemId, VmwHorizonClientProtocol protocol)
+            public void OnLaunchingItem(uint serverId, VmwHorizonLaunchItemType type, string launchItemId,
+                VmwHorizonClientProtocol protocol)
             {
-                DispatchMessage(3, string.Format("Launching Item, Server ID: {0}, type: {1}, Item ID: {2}, Protocol: {3}", serverId,
-                           type.ToString(), launchItemId, protocol.ToString()));
+                DispatchMessage(3,
+                    string.Format("Launching Item, Server ID: {0}, type: {1}, Item ID: {2}, Protocol: {3}", serverId,
+                        type.ToString(), launchItemId, protocol.ToString()));
             }
 
             public void OnItemLaunchSucceeded(uint serverId, VmwHorizonLaunchItemType type, string launchItemId)
             {
-                DispatchMessage(3, string.Format("Launch Item Succeeded, Server ID: {0}, Type: {1}, ID: {2}", serverId, type.ToString(), launchItemId));
+                DispatchMessage(3,
+                    string.Format("Launch Item Succeeded, Server ID: {0}, Type: {1}, ID: {2}", serverId,
+                        type.ToString(), launchItemId));
             }
 
-            public void OnItemLaunchFailed(uint serverId, VmwHorizonLaunchItemType type, string launchItemId, string errorMessage)
+            public void OnItemLaunchFailed(uint serverId, VmwHorizonLaunchItemType type, string launchItemId,
+                string errorMessage)
             {
-                DispatchMessage(3, string.Format("Launch Item Succeeded, Server ID: {0}, type: {1}, Item ID: {2}", serverId,
-                            type.ToString(), launchItemId));
+                DispatchMessage(3, string.Format("Launch Item Succeeded, Server ID: {0}, type: {1}, Item ID: {2}",
+                    serverId,
+                    type.ToString(), launchItemId));
             }
 
-            public void OnNewProtocolSessionCreated(uint serverId, string sessionToken, VmwHorizonClientProtocol protocol, VmwHorizonClientSessionType type, string clientId)
+            public void OnNewProtocolSessionCreated(uint serverId, string sessionToken,
+                VmwHorizonClientProtocol protocol, VmwHorizonClientSessionType type, string clientId)
             {
-                DispatchMessage(3, string.Format("New Protocol Session Created, Server ID: {0}, Token: {1}, Protocol: {2}, Type: {3}, ClientID: {4}",
-                           serverId, sessionToken, protocol.ToString(), type.ToString(), clientId));
+                DispatchMessage(3,
+                    string.Format(
+                        "New Protocol Session Created, Server ID: {0}, Token: {1}, Protocol: {2}, Type: {3}, ClientID: {4}",
+                        serverId, sessionToken, protocol.ToString(), type.ToString(), clientId));
             }
 
-            public void OnProtocolSessionDisconnected(uint serverId, string sessionToken, uint connectionFailed, string errorMessage)
+            public void OnProtocolSessionDisconnected(uint serverId, string sessionToken, uint connectionFailed,
+                string errorMessage)
             {
                 DispatchMessage(3, string.Format("" +
-                            "Protocol Session Disconnected, Server ID: {0}, Token: {1}, ConnectFailed: {2}, Error: {3}",
-                            serverId, sessionToken, connectionFailed, errorMessage));
+                                                 "Protocol Session Disconnected, Server ID: {0}, Token: {1}, ConnectFailed: {2}, Error: {3}",
+                    serverId, sessionToken, connectionFailed, errorMessage));
             }
 
             public void OnSeamlessWindowsModeChanged(uint serverId, string sessionToken, uint enabled)
             {
-                DispatchMessage(3, string.Format("Seamless Window Mode Changed, Server ID: {0}, Token: {1}, Enabled: {2}",
-                            serverId, sessionToken, enabled));
+                DispatchMessage(3,
+                    string.Format("Seamless Window Mode Changed, Server ID: {0}, Token: {1}, Enabled: {2}",
+                        serverId, sessionToken, enabled));
             }
 
-            public void OnSeamlessWindowAdded(uint serverId, string sessionToken, string windowPath, string entitlementId, int windowId, long windowHandle, VmwHorizonClientSeamlessWindowType type)
+            public void OnSeamlessWindowAdded(uint serverId, string sessionToken, string windowPath,
+                string entitlementId, int windowId, long windowHandle, VmwHorizonClientSeamlessWindowType type)
             {
                 DispatchMessage(3, string.Format(
-                           "Seamless Window Added, Server ID: {0}, Token: {1}, WindowPath: {2}, EntitlementID: {3}, WindowID: {4}, WindowHandle: {5}, Type: {6}",
-                           serverId, sessionToken, windowPath, entitlementId, windowId, windowHandle, type.ToString()));
+                    "Seamless Window Added, Server ID: {0}, Token: {1}, WindowPath: {2}, EntitlementID: {3}, WindowID: {4}, WindowHandle: {5}, Type: {6}",
+                    serverId, sessionToken, windowPath, entitlementId, windowId, windowHandle, type.ToString()));
             }
 
             public void OnSeamlessWindowRemoved(uint serverId, string sessionToken, int windowId)
             {
                 DispatchMessage(3, string.Format(
-                            "Seamless Window Removed, Server ID: {0}, Token: {1}, WindowID: {2}",
-                            serverId, sessionToken, windowId));
+                    "Seamless Window Removed, Server ID: {0}, Token: {1}, WindowID: {2}",
+                    serverId, sessionToken, windowId));
             }
 
             public void OnUSBInitializeComplete(uint serverId, string sessionToken)
             {
                 DispatchMessage(3, string.Format(
-                           "USB Initialize Complete, Server ID: {0}, Token: {1}",
-                          serverId, sessionToken));
+                    "USB Initialize Complete, Server ID: {0}, Token: {1}",
+                    serverId, sessionToken));
             }
 
             public void OnConnectUSBDeviceComplete(uint serverId, string sessionToken, uint isConnected)
             {
                 DispatchMessage(3, string.Format(
-                          "Connect USB Device Complete, Server ID: {0}, Token: {1}, IsConnected: {2}",
-                          serverId, sessionToken, isConnected));
+                    "Connect USB Device Complete, Server ID: {0}, Token: {1}, IsConnected: {2}",
+                    serverId, sessionToken, isConnected));
             }
 
             public void OnUSBDeviceError(uint serverId, string sessionToken, string errorMessage)
             {
                 DispatchMessage(3, string.Format(
-                          "Connect USB Device Error, Server ID: {0}, Token: {1}, Error: {2}",
-                          serverId, sessionToken, errorMessage));
+                    "Connect USB Device Error, Server ID: {0}, Token: {1}, Error: {2}",
+                    serverId, sessionToken, errorMessage));
             }
 
             public void OnAddSharedFolderComplete(uint serverId, string fullPath, uint succeeded, string errorMessage)
             {
                 DispatchMessage(3, string.Format(
-                          "Add Shared Folder Complete, Server ID: {0}, FullPath: {1}, Succeeded: {2}, Error: {3}",
-                          serverId, fullPath, succeeded, errorMessage));
+                    "Add Shared Folder Complete, Server ID: {0}, FullPath: {1}, Succeeded: {2}, Error: {3}",
+                    serverId, fullPath, succeeded, errorMessage));
             }
 
-            public void OnRemoveSharedFolderComplete(uint serverId, string fullPath, uint succeeded, string errorMessage)
+            public void OnRemoveSharedFolderComplete(uint serverId, string fullPath, uint succeeded,
+                string errorMessage)
             {
                 DispatchMessage(3, string.Format(
-                          "Remove Shared Folder Complete, Server ID: {0}, FullPath: {1}, Succeeded: {2}, Error: {3}",
-                          serverId, fullPath, succeeded, errorMessage));
+                    "Remove Shared Folder Complete, Server ID: {0}, FullPath: {1}, Succeeded: {2}, Error: {3}",
+                    serverId, fullPath, succeeded, errorMessage));
             }
 
             public void OnFolderCanBeShared(uint serverId, string sessionToken, uint canShare)
             {
                 DispatchMessage(3, string.Format(
-                          "Folder Can Be Shared, Server ID: {0}, Token: {1}, canShare: {2}",
-                          serverId, sessionToken, canShare));
+                    "Folder Can Be Shared, Server ID: {0}, Token: {1}, canShare: {2}",
+                    serverId, sessionToken, canShare));
             }
 
             public void OnCDRForcedByAgent(uint serverId, string sessionToken, uint forcedByAgent)
             {
                 DispatchMessage(3, string.Format(
-                         "CDR Forced By Agent, Server ID: {0}, Token: {1}, Forced: {2}",
-                        serverId, sessionToken, forcedByAgent));
+                    "CDR Forced By Agent, Server ID: {0}, Token: {1}, Forced: {2}",
+                    serverId, sessionToken, forcedByAgent));
             }
 
-            public void OnItemLaunchSucceeded2(uint serverId, VmwHorizonLaunchItemType type, string launchItemId, string sessionToken)
+            public void OnItemLaunchSucceeded2(uint serverId, VmwHorizonLaunchItemType type, string launchItemId,
+                string sessionToken)
             {
-                DispatchMessage(3, string.Format("Item Launch Succeeded(2), Server ID: {0}, Type: {1}, ID: {2}, token: {3}", serverId,
-                            type.ToString(), launchItemId, sessionToken));
+                DispatchMessage(3,
+                    string.Format("Item Launch Succeeded(2), Server ID: {0}, Type: {1}, ID: {2}, token: {3}", serverId,
+                        type.ToString(), launchItemId, sessionToken));
             }
 
             public void OnReceivedLaunchItems2(uint serverId, Array launchItems)
             {
-                DispatchMessage(3, string.Format("Received Launch Items2, Server ID: {0}, Item Count: {1}", serverId, launchItems.Length));
+                DispatchMessage(3,
+                    string.Format("Received Launch Items2, Server ID: {0}, Item Count: {1}", serverId,
+                        launchItems.Length));
                 var Items = Helpers.GetLaunchItems2(launchItems);
                 foreach (var item in Items)
                 {
-                    DispatchMessage(3, String.Format("Launch Item: Server ID: {0}, Name: {1}, Type: {2}, ID: {3}, Remotable: {4}", serverId, item.name, item.type.ToString(), item.id, item.hasRemotableAssets));
+                    DispatchMessage(3,
+                        String.Format("Launch Item: Server ID: {0}, Name: {1}, Type: {2}, ID: {3}, Remotable: {4}",
+                            serverId, item.name, item.type.ToString(), item.id, item.hasRemotableAssets));
                 }
             }
         }
