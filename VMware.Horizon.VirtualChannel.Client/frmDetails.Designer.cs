@@ -1,6 +1,6 @@
 ﻿namespace VMware.Horizon.VirtualChannel.Client
 {
-    partial class frmDetails
+    partial class FrmDetails
     {
         /// <summary>
         /// Required designer variable.
@@ -29,7 +29,7 @@
         private void InitializeComponent()
         {
             this.components = new System.ComponentModel.Container();
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(frmDetails));
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(FrmDetails));
             this.cmsMain = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.tsmiExit = new System.Windows.Forms.ToolStripMenuItem();
             this.niClient = new System.Windows.Forms.NotifyIcon(this.components);
@@ -76,7 +76,7 @@
             this.ClientSize = new System.Drawing.Size(1231, 596);
             this.Controls.Add(this.lbDebug);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
-            this.Name = "frmDetails";
+            this.Name = "FrmDetails";
             this.Text = "Virtual Channel Client Details:";
             this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.frmDetails_FormClosing);
             this.Load += new System.EventHandler(this.frmDetails_Load);

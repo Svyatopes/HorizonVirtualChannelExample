@@ -1,20 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Text;
 
 namespace VMware.Horizon.VirtualChannel.RDPVCBridgeInterop
 {
     public class BinaryConverters
     {
-        public static byte[] StringToBinary(string data)
-        {
-            return Encoding.ASCII.GetBytes(data);
-        }
-        public static string BinaryToString(byte[] data)
-        {
-            return Encoding.ASCII.GetString(data);
-        }
+        public static byte[] StringToBinary(string data) =>
+            Encoding.ASCII.GetBytes(data);
+
+        public static string BinaryToString(byte[] data) =>
+            Encoding.ASCII.GetString(data);
     }
 }

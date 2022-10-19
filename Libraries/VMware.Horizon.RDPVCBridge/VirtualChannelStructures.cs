@@ -1,15 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace VMware.Horizon.VirtualChannel.RDPVCBridgeInterop
 {
     public class VirtualChannelStructures
     {
-        public static Byte[] PingFragment = new byte[] { 0x50 /* 'P' */, 0x69 /* 'i' */, 0x6E /* 'n' */, 0x67 /* 'g' */ };
-        public static Byte[] PongFragment = new byte[] { 0x50 /* 'P' */, 0x6F /* 'o' */, 0x6E /* 'n' */, 0x67 /* 'g' */ };
-
-        public static IntPtr WTS_CURRENT_SERVER_HANDLE = (IntPtr)null;
         public enum ChannelEvents
         {
             Initialized = 0,
@@ -71,5 +65,10 @@ namespace VMware.Horizon.VirtualChannel.RDPVCBridgeInterop
             NullData = 16,
             ZeroLength = 17
         }
+
+        public static byte[] PingFragment = { 0x50 /* 'P' */, 0x69 /* 'i' */, 0x6E /* 'n' */, 0x67 /* 'g' */ };
+        public static byte[] PongFragment = { 0x50 /* 'P' */, 0x6F /* 'o' */, 0x6E /* 'n' */, 0x67 /* 'g' */ };
+
+        public static IntPtr WTS_CURRENT_SERVER_HANDLE = (IntPtr)null;
     }
 }

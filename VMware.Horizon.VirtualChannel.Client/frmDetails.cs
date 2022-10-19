@@ -1,21 +1,13 @@
-﻿using NAudio.Wave;
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.ServiceModel.Configuration;
-using System.Text;
+﻿using System;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
+// ReSharper disable LocalizableElement
 
 namespace VMware.Horizon.VirtualChannel.Client
 {
-    public partial class frmDetails : Form
+    public partial class FrmDetails : Form
     {
-        public frmDetails()
+        public FrmDetails()
         {
             InitializeComponent();
         }
@@ -27,16 +19,14 @@ namespace VMware.Horizon.VirtualChannel.Client
             Runtime.HorizonMonitor.ThreadException += HorizonMonitor_ThreadException;
             if (Runtime.HorizonMonitor.Initialise())
             {
-
                 var MonitorThread = new Thread(Runtime.HorizonMonitor.Start);
                 MonitorThread.Start();
-                
             }
             else
             {
-                MessageBox.Show("Failed to register horizon client", "Failed to register Horizon client", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Failed to register horizon client", "Failed to register Horizon client",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
-
         }
 
         private void FollowListBoxTail()
@@ -53,7 +43,6 @@ namespace VMware.Horizon.VirtualChannel.Client
 
         private void HorizonMonitor_ThreadException(Exception ex)
         {
-            
             if (lbDebug.InvokeRequired)
             {
                 lbDebug.Invoke((Action<Exception>)HorizonMonitor_ThreadException, ex);
@@ -74,37 +63,30 @@ namespace VMware.Horizon.VirtualChannel.Client
             }
             else
             {
-
                 lbDebug.Items.Add(Entry);
-                while(lbDebug.Items.Count > 100)
-                {
-                    lbDebug.Items.RemoveAt(0);
-                }
+                while (lbDebug.Items.Count > 100) lbDebug.Items.RemoveAt(0);
                 FollowListBoxTail();
-
             }
         }
 
         private void niClient_MouseDoubleClick(object sender, MouseEventArgs e)
         {
-            this.Visible = true;
+            Visible = true;
         }
 
         private void tsmiExit_Click(object sender, EventArgs e)
         {
-            this.Close();
-           
+            Close();
         }
 
         private void frmDetails_FormClosing(object sender, FormClosingEventArgs e)
         {
-            Runtime.HorizonMonitor.isClosing = true;
+            Runtime.HorizonMonitor.IsClosing = true;
         }
 
         private void frmDetails_Shown(object sender, EventArgs e)
         {
             Visible = false;
-
         }
     }
 }

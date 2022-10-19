@@ -1,105 +1,117 @@
-﻿using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.NetworkInformation;
-using System.Runtime.CompilerServices;
+﻿using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using System.Threading.Tasks;
+using System.Timers;
+using Newtonsoft.Json;
 using VMware.Horizon.VirtualChannel.RDPVCBridgeInterop;
-using static VMware.Horizon.VirtualChannel.PipeMessages.v1;
+using static VMware.Horizon.VirtualChannel.PipeMessages.V1;
 
 namespace VMware.Horizon.VirtualChannel.AgentAPI
 {
     public class VirtualChannelAgent
     {
+        public delegate void ChannelConnectedHandler(bool connected);
 
-        public event ThreadMessageCallback LogMessage;
-        public delegate void ThreadMessageCallback(int severity, string message);
-
-        public event ChannelConnectedHandler ChannelConnectionChange;
-        public delegate void ChannelConnectedHandler(bool Connected);
-
-        public bool isClosing = false;
-
-        public event ThreadExceptionHandler ObjectException;
-        public delegate void ThreadExceptionHandler(Exception ex);
-
-        public event SyncLocalVolumeHandler SyncLocalVolume;
         public delegate void SyncLocalVolumeHandler(VolumeStatus vs);
 
-        private bool FirstProbe = true;
-        public bool Connected = false;
+        public delegate void ThreadExceptionHandler(Exception ex);
 
-        private bool HasRequestedLocalAudio = false;
-        private System.Timers.Timer PulseTimer = null;
+        public delegate void ThreadMessageCallback(int severity, string message);
 
-        public IntPtr Handle { get; set; }
-        public object Lock { get; set; }
-        public VirtualChannelAgent(string ChannelName)
+        public bool Connected;
+
+        private bool _hasRequestedLocalAudio;
+
+        public bool IsClosing = false;
+        private Timer _pulseTimer;
+
+        public VirtualChannelAgent(string channelName)
         {
             Lock = new object();
-            int sid = System.Diagnostics.Process.GetCurrentProcess().SessionId;
-            Handle = RDPVCBridge.VDP_VirtualChannelOpen(RDPVCBridgeInterop.VirtualChannelStructures.WTS_CURRENT_SERVER_HANDLE, sid, ChannelName);
+            var sid = Process.GetCurrentProcess().SessionId;
+            Handle = RdpvcBridge.VDP_VirtualChannelOpen(VirtualChannelStructures.WTS_CURRENT_SERVER_HANDLE, sid,
+                channelName);
             if (Handle == IntPtr.Zero)
             {
                 var er = Marshal.GetLastWin32Error();
                 throw new Exception("Could not Open the virtual Channel: " + er);
             }
-
         }
+
+        public IntPtr Handle { get; set; }
+        public object Lock { get; set; }
+
+        public event ThreadMessageCallback LogMessage;
+
+        public event ChannelConnectedHandler ChannelConnectionChange;
+
+#pragma warning disable CS0067
+        public event ThreadExceptionHandler ObjectException;
+#pragma warning restore CS0067
+
+        public event SyncLocalVolumeHandler SyncLocalVolume;
+
         ~VirtualChannelAgent()
         {
             if (Handle != IntPtr.Zero)
             {
                 try
                 {
-                    RDPVCBridge.VDP_VirtualChannelClose(Handle);
+                    RdpvcBridge.VDP_VirtualChannelClose(Handle);
                 }
-                catch { }
+                catch
+                {
+                    // ignored
+                }
 
                 try
                 {
-                    PulseTimer.Stop();
+                    _pulseTimer.Stop();
                 }
-                catch { }
-                try
+                catch
                 {
-                    PulseTimer.Dispose();
+                    // ignored
                 }
 
-                catch { }
+                try
+                {
+                    _pulseTimer.Dispose();
+                }
+
+                catch
+                {
+                    // ignored
+                }
             }
         }
 
         private void InitializePulseTimer()
         {
-            PulseTimer = new System.Timers.Timer
+            _pulseTimer = new Timer
             {
                 Enabled = true,
                 Interval = 5000
             };
-            PulseTimer.Start();
+            _pulseTimer.Start();
         }
+
         public void Destroy()
         {
-
-            LogMessage?.Invoke(3, string.Format("Closing object."));
-            RDPVCBridge.VDP_VirtualChannelClose(Handle);
+            LogMessage?.Invoke(3, "Closing object.");
+            RdpvcBridge.VDP_VirtualChannelClose(Handle);
             Handle = IntPtr.Zero;
             ChannelConnectionChange?.Invoke(false);
-            PulseTimer.Stop();
-            PulseTimer.Dispose();
+            _pulseTimer.Stop();
+            _pulseTimer.Dispose();
             Connected = false;
         }
 
-        private void ChangeConnectivity(bool _Connected)
+        private void ChangeConnectivity(bool connected)
         {
-            if (Connected != _Connected)
+            if (Connected != connected)
             {
-                Connected = _Connected;
+                Connected = connected;
                 ChannelConnectionChange?.Invoke(Connected);
             }
         }
@@ -107,142 +119,141 @@ namespace VMware.Horizon.VirtualChannel.AgentAPI
         public async Task<bool> Open()
         {
             InitializePulseTimer();
-            PulseTimer.Elapsed += PulseTimer_Elapsed;
+            _pulseTimer.Elapsed += PulseTimer_Elapsed;
 
-            ChannelResponse ChannelResponse = await Probe();
+            var ChannelResponse = await Probe();
             if (ChannelResponse.Successful)
             {
-
                 return true;
             }
+
             return false;
         }
 
-        private async void PulseTimer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
+        private async void PulseTimer_Elapsed(object sender, ElapsedEventArgs e)
         {
-
             if ((await Probe()).Successful)
             {
-                
-                if (!HasRequestedLocalAudio)
+                if (!_hasRequestedLocalAudio)
                 {
                     var LocalVolume = await GetClientVolume();
                     SyncLocalVolume?.Invoke(LocalVolume);
-                    HasRequestedLocalAudio = true;
+                    _hasRequestedLocalAudio = true;
                 }
             }
         }
 
-        private async Task<object> SendMessage(ChannelCommand MessageObject, Type returnType)
+        private async Task<object> SendMessage(ChannelCommand messageObject, Type returnType)
         {
             return await Task.Run(() =>
             {
-                LogMessage?.Invoke(3, string.Format("send requested, awaiting lock."));
+                LogMessage?.Invoke(3, "send requested, awaiting lock.");
 
                 lock (Lock)
                 {
-                    LogMessage?.Invoke(3, string.Format("send requested, lock received."));
+                    LogMessage?.Invoke(3, "send requested, lock received.");
 
-                    int written = 0;
-                    string serialisedMessage = (JsonConvert.SerializeObject(MessageObject));
-                    LogMessage?.Invoke(3, string.Format("Sending Message : {0}", serialisedMessage));
-                    byte[] msg = BinaryConverters.StringToBinary(serialisedMessage);
-                    bool SendResult = RDPVCBridge.VDP_VirtualChannelWrite(Handle, msg, msg.Length, ref written);
-                    LogMessage?.Invoke(3, string.Format("Sending Message result: {0} - Written: {1}", SendResult, written));
+                    var written = 0;
+                    var serialisedMessage = JsonConvert.SerializeObject(messageObject);
+                    LogMessage?.Invoke(3, $"Sending Message : {serialisedMessage}");
+                    var msg = BinaryConverters.StringToBinary(serialisedMessage);
+                    var SendResult = RdpvcBridge.VDP_VirtualChannelWrite(Handle, msg, msg.Length, ref written);
+                    LogMessage?.Invoke(3,
+                        string.Format("Sending Message result: {0} - Written: {1}", SendResult, written));
                     if (!SendResult)
                     {
-                        LogMessage?.Invoke(2, string.Format("Sending the command was not succesful"));
+                        LogMessage?.Invoke(2, "Sending the command was not succesful");
                         ChangeConnectivity(false);
                         return null;
                     }
 
-                    byte[] buffer = new byte[10240];
-                    int actualRead = 0;
+                    var buffer = new byte[10240];
+                    var actualRead = 0;
 
-                    bool ReceiveResult = RDPVCBridge.VDP_VirtualChannelRead(Handle, 5000, buffer, buffer.Length, ref actualRead);
-                    LogMessage?.Invoke(3, string.Format("VDP_VirtualChannelRead result: {0} - ActualRead: {1}", ReceiveResult, actualRead));
+                    var ReceiveResult =
+                        RdpvcBridge.VDP_VirtualChannelRead(Handle, 5000, buffer, buffer.Length, ref actualRead);
+                    LogMessage?.Invoke(3,
+                        string.Format("VDP_VirtualChannelRead result: {0} - ActualRead: {1}", ReceiveResult,
+                            actualRead));
                     if (!ReceiveResult)
                     {
                         ChangeConnectivity(false);
-                        LogMessage?.Invoke(3, string.Format("Did not receive a response in a timely fashion or we received an error"));
+                        LogMessage?.Invoke(3, "Did not receive a response in a timely fashion or we received an error");
                         return null;
                     }
-                    byte[] receivedContents = new byte[actualRead];
+
+                    var receivedContents = new byte[actualRead];
                     Buffer.BlockCopy(buffer, 0, receivedContents, 0, actualRead);
-                    string serialisedResponse = BinaryConverters.BinaryToString(receivedContents);
+                    var serialisedResponse = BinaryConverters.BinaryToString(receivedContents);
                     LogMessage?.Invoke(3, string.Format("Received: {0}", serialisedResponse));
-                    return JsonConvert.DeserializeObject(serialisedResponse, (Type)returnType, (JsonSerializerSettings)null);
+                    return JsonConvert.DeserializeObject(serialisedResponse, returnType, (JsonSerializerSettings)null);
                 }
             });
         }
+
         public async Task<ChannelResponse> Probe()
         {
             try
             {
-                    object ProbeResponse = await SendMessage(new ChannelCommand(CommandType.Probe,null),typeof(ChannelResponse));
-                    if (ProbeResponse != null)
+                var ProbeResponse =
+                    await SendMessage(new ChannelCommand(CommandType.Probe, null), typeof(ChannelResponse));
+                if (ProbeResponse != null)
+                {
+                    var Response = (ChannelResponse)ProbeResponse;
+                    if (Response.Successful)
                     {
-                        ChannelResponse Response = (ChannelResponse)ProbeResponse;
-                        if (Response.Successful)
-                        {
-                            ChangeConnectivity(true);                     
-                        }
-                        else
-                        {
-                            ChangeConnectivity(false);                           
-                        }
-                        return Response;
+                        ChangeConnectivity(true);
                     }
                     else
                     {
                         ChangeConnectivity(false);
-                        LogMessage(1, "Receive Failed during probe");
-                        return new ChannelResponse { Successful = false, Details = "Receive Failed" };
-                    }               
+                    }
+
+                    return Response;
+                }
+
+                ChangeConnectivity(false);
+                LogMessage(1, "Receive Failed during probe");
+                return new ChannelResponse { Successful = false, Details = "Receive Failed" };
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
-                LogMessage?.Invoke(1,string.Format( "Exception trapped in Probe: {0}", ex.ToString()));
-                return new ChannelResponse {
+                LogMessage?.Invoke(1, string.Format("Exception trapped in Probe: {0}", ex));
+                return new ChannelResponse
+                {
                     Successful = false,
-                    Details = ex.ToString(),
+                    Details = ex.ToString()
                 };
-                
             }
-          
         }
+
         public async Task<ChannelResponse> SetVolume(VolumeStatus sv)
-        {          
+        {
             if (Connected)
             {
-                LogMessage?.Invoke(3, string.Format("SetVolume requested, connection open."));
-                ChannelCommand cc = new ChannelCommand(CommandType.SetVolume, sv);
-                return (ChannelResponse) await SendMessage(cc,typeof(ChannelResponse));
-            }
-            else
-            {
-                LogMessage?.Invoke(3, string.Format("SetVolume failed. Channel Closed."));
-                ChangeConnectivity(false);
-                return null;
+                LogMessage?.Invoke(3, "SetVolume requested, connection open.");
+                var cc = new ChannelCommand(CommandType.SetVolume, sv);
+                return (ChannelResponse)await SendMessage(cc, typeof(ChannelResponse));
             }
 
+            LogMessage?.Invoke(3, "SetVolume failed. Channel Closed.");
+            ChangeConnectivity(false);
+            return null;
         }
+
         public async Task<VolumeStatus> GetClientVolume()
         {
-
             if (Connected)
             {
-                LogMessage?.Invoke(3, string.Format("GetVolume requested, connnection open."));
-                LogMessage?.Invoke(3, string.Format("Getting Volume Status"));
-                return (VolumeStatus)await SendMessage(new ChannelCommand(CommandType.GetVolume, null),typeof(VolumeStatus));
-            }
-            else
-            {
-                LogMessage?.Invoke(3, string.Format("GetVolume failed. Channel Closed."));
-                ChangeConnectivity(false);
-                return null;
+                LogMessage?.Invoke(3, "GetVolume requested, connnection open.");
+                LogMessage?.Invoke(3, "Getting Volume Status");
+                return (VolumeStatus)await SendMessage(new ChannelCommand(CommandType.GetVolume, null),
+                    typeof(VolumeStatus));
             }
 
+            LogMessage?.Invoke(3, "GetVolume failed. Channel Closed.");
+            ChangeConnectivity(false);
+            return null;
         }
     }
 }

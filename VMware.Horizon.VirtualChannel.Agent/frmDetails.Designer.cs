@@ -1,6 +1,6 @@
 ﻿namespace VMware.Horizon.VirtualChannel.Agent
 {
-    partial class frmDetails
+    partial class FrmDetails
     {
         /// <summary>
         /// Required designer variable.
@@ -29,7 +29,7 @@
         private void InitializeComponent()
         {
             this.components = new System.ComponentModel.Container();
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(frmDetails));
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(FrmDetails));
             this.lbDetails = new System.Windows.Forms.ListBox();
             this.niAgent = new System.Windows.Forms.NotifyIcon(this.components);
             this.cmsMain = new System.Windows.Forms.ContextMenuStrip(this.components);
@@ -134,7 +134,7 @@
             this.Controls.Add(this.lbDetails);
             this.Controls.Add(this.menuStrip1);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
-            this.Name = "frmDetails";
+            this.Name = "FrmDetails";
             this.Text = "Virtual Channel Agent Details:";
             this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.frmDetails_FormClosing);
             this.Load += new System.EventHandler(this.frmDetails_Load);

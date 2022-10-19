@@ -7,12 +7,28 @@ using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
 using VMware.Horizon.VirtualChannel.RDPVCBridgeInterop;
 using VMwareHorizonClientController;
-using static VMware.Horizon.VirtualChannel.PipeMessages.v1;
+using static VMware.Horizon.VirtualChannel.PipeMessages.V1;
 
 namespace VMware.Horizon.VirtualChannel.Client
 {
     public class HorizonMonitor
     {
+        public delegate void ThreadExceptionHandler(Exception ex);
+
+        public delegate void ThreadMessageCallback(int severity, string message);
+
+        public string BatteryStatus = "";
+        private VMwareHorizonVirtualChannelEvents _channelEvents;
+        private MMDevice _device;
+
+        private MMDeviceEnumerator _en;
+
+        public bool IsClosing;
+
+        //private IVMwareHorizonClientVChan VMwareHorizonVirtualChannelAPI = null;
+
+        private IVMwareHorizonClient4 _vmhc;
+
         private void SetVolumeStatus(VolumeStatus sv)
         {
             using (var en = new MMDeviceEnumerator())
@@ -26,7 +42,7 @@ namespace VMware.Horizon.VirtualChannel.Client
 
         private VolumeStatus GetVolume()
         {
-            using (MMDeviceEnumerator en = new MMDeviceEnumerator())
+            using (var en = new MMDeviceEnumerator())
             {
                 var device = en.GetDefaultAudioEndpoint(DataFlow.Render,
                     Role.Console);
@@ -43,60 +59,41 @@ namespace VMware.Horizon.VirtualChannel.Client
             }
             else
             {
-                ThreadMessage?.Invoke(3, "Volume changed to: " + data.MasterVolume.ToString());
+                ThreadMessage?.Invoke(3, "Volume changed to: " + data.MasterVolume);
             }
         }
 
 
         public event ThreadMessageCallback ThreadMessage;
-
-        public delegate void ThreadMessageCallback(int severity, string message);
-
-        public bool isClosing = false;
         public event ThreadExceptionHandler ThreadException;
-
-        public delegate void ThreadExceptionHandler(Exception ex);
-
-        public string BatteryStatus = "";
-
-        MMDeviceEnumerator en = null;
-        MMDevice device = null;
-
-        //private IVMwareHorizonClientVChan VMwareHorizonVirtualChannelAPI = null;
-
-        private IVMwareHorizonClient4 vmhc = null;
-        VMwareHorizonVirtualChannelEvents ChannelEvents = null;
 
         public bool Initialise()
         {
-            /// Open Audio Callbacks
-            /// 
-            en = new MMDeviceEnumerator();
-            device = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
-            device.AudioEndpointVolume.OnVolumeNotification += AudioEndpointVolume_OnVolumeNotification;
-            GC.SuppressFinalize(en);
-            GC.SuppressFinalize(device);
+            // Open Audio Callbacks
+             
+            _en = new MMDeviceEnumerator();
+            _device = _en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
+            _device.AudioEndpointVolume.OnVolumeNotification += AudioEndpointVolume_OnVolumeNotification;
+            GC.SuppressFinalize(_en);
+            GC.SuppressFinalize(_device);
             ThreadMessage?.Invoke(3, "Opened Audio API");
 
 
-            /// Open Horizon Client Listener
-            /// 
-            vmhc = (IVMwareHorizonClient4)new VMwareHorizonClient();
+            // Open Horizon Client Listener
+            _vmhc = (IVMwareHorizonClient4)new VMwareHorizonClient();
             IVMwareHorizonClientEvents5
-                HorizonEvents = (IVMwareHorizonClientEvents5)new VMwareHorizonClientEvents(this);
-            vmhc.Advise2(HorizonEvents, VmwHorizonClientAdviseFlags.VmwHorizonClientAdvise_DispatchCallbacksOnUIThread);
-            GC.SuppressFinalize(vmhc);
+                HorizonEvents = new VMwareHorizonClientEvents(this);
+            _vmhc.Advise2(HorizonEvents, VmwHorizonClientAdviseFlags.VmwHorizonClientAdvise_DispatchCallbacksOnUIThread);
+            GC.SuppressFinalize(_vmhc);
             ThreadMessage?.Invoke(3, "Opened Horizon API");
 
-            /// Register Virtual Channel Callback
-            /// 
-            ChannelEvents = new VMwareHorizonVirtualChannelEvents(this);
-            object APIObject = null;
-            VMwareHorizonClientChannelDefinition[] Channels = new VMwareHorizonClientChannelDefinition[1];
+            // Register Virtual Channel Callback
+            _channelEvents = new VMwareHorizonVirtualChannelEvents(this);
+            var Channels = new VMwareHorizonClientChannelDefinition[1];
             Channels[0] = new VMwareHorizonClientChannelDefinition("VVCAM", 0);
-            vmhc.RegisterVirtualChannelConsumer2(Channels, ChannelEvents, out APIObject);
-            ChannelEvents.HorizonClientVirtualChannel = (IVMwareHorizonClientVChan)APIObject;
-            GC.SuppressFinalize(ChannelEvents);
+            _vmhc.RegisterVirtualChannelConsumer2(Channels, _channelEvents, out var apiObject);
+            _channelEvents.HorizonClientVirtualChannel = (IVMwareHorizonClientVChan)apiObject;
+            GC.SuppressFinalize(_channelEvents);
             ThreadMessage.Invoke(3, "Opened Virtual Channel Listener");
             return true;
         }
@@ -106,30 +103,27 @@ namespace VMware.Horizon.VirtualChannel.Client
         {
             try
             {
-                while (!isClosing)
-                {
-                    Thread.Sleep(500);
-                }
+                while (!IsClosing) Thread.Sleep(500);
 
-                en.Dispose();
-                device.Dispose();
+                _en.Dispose();
+                _device.Dispose();
 
-                GC.ReRegisterForFinalize(ChannelEvents);
-                GC.ReRegisterForFinalize(en);
-                GC.ReRegisterForFinalize(device);
-                GC.ReRegisterForFinalize(vmhc);
+                GC.ReRegisterForFinalize(_channelEvents);
+                GC.ReRegisterForFinalize(_en);
+                GC.ReRegisterForFinalize(_device);
+                GC.ReRegisterForFinalize(_vmhc);
             }
             catch (Exception ex)
             {
-                this.ThreadMessage?.Invoke(1,
-                    string.Format("The Horizon Monitor thread reported a fatal Exception: {0}", ex.ToString()));
-                this.ThreadException?.Invoke(ex);
+                ThreadMessage?.Invoke(1,
+                    string.Format("The Horizon Monitor thread reported a fatal Exception: {0}", ex));
+                ThreadException?.Invoke(ex);
             }
         }
 
         public void Close()
         {
-            this.isClosing = true;
+            IsClosing = true;
         }
 
 
@@ -137,39 +131,36 @@ namespace VMware.Horizon.VirtualChannel.Client
         {
             public VMwareHorizonClientChannelDefinition(string name, uint options)
             {
-                mName = name;
-                mOptions = options;
+                this.name = name;
+                this.options = options;
             }
 
-            public string name
-            {
-                get { return mName; }
-            }
+            public string name { get; }
 
-            public uint options
-            {
-                get { return mOptions; }
-            }
-
-            private string mName;
-            private uint mOptions;
+            public uint options { get; }
         }
 
         public class VMwareHorizonVirtualChannelEvents : IVMwareHorizonClientVChanEvents
         {
-            public IVMwareHorizonClientVChan HorizonClientVirtualChannel = null;
-            private HorizonMonitor CallbackObject;
+            private readonly HorizonMonitor _callbackObject;
+            public IVMwareHorizonClientVChan HorizonClientVirtualChannel;
+
+            private uint _mChannelHandle;
+            private byte[] _mClientPingFragment = { 0x50 /* 'P' */, 0x6F /* 'o' */, 0x6E /* 'n' */, 0x67 /* 'g' */ };
+            private int _mPingTestCurLen;
+            private byte[] _mPingTestMsg;
+            private byte[] _mServerPingFragment = { 0x50 /* 'P' */, 0x69 /* 'i' */, 0x6E /* 'n' */, 0x67 /* 'g' */ };
 
             public VMwareHorizonVirtualChannelEvents(HorizonMonitor callback)
             {
-                CallbackObject = callback;
+                _callbackObject = callback;
             }
 
             public void ConnectEventProc(uint serverId, string sessionToken, uint eventType, Array eventData)
             {
-                VirtualChannelStructures.ChannelEvents currentEventType =
+                var currentEventType =
                     (VirtualChannelStructures.ChannelEvents)eventType;
-                CallbackObject.ThreadMessage?.Invoke(3, "ConnectEventProc() called: " + currentEventType.ToString());
+                _callbackObject.ThreadMessage?.Invoke(3, "ConnectEventProc() called: " + currentEventType);
                 //  SharedObjects.hvm.ThreadMessage?.Invoke(3, "ConnectEventProc() called ");
 
                 if (eventType == (uint)VirtualChannelStructures.ChannelEvents.Connected)
@@ -178,68 +169,68 @@ namespace VMware.Horizon.VirtualChannel.Client
                     try
                     {
                         HorizonClientVirtualChannel.VirtualChannelOpen(serverId, sessionToken, "VVCAM",
-                            out mChannelHandle);
-                        CallbackObject.ThreadMessage?.Invoke(3, "!! VirtualChannelOpen() succeeded");
+                            out _mChannelHandle);
+                        _callbackObject.ThreadMessage?.Invoke(3, "!! VirtualChannelOpen() succeeded");
                     }
                     catch (Exception ex)
                     {
-                        CallbackObject.ThreadMessage?.Invoke(3,
-                            string.Format("VirtualChannelOpen() failed: {0}", ex.ToString()));
-                        mChannelHandle = 0;
+                        _callbackObject.ThreadMessage?.Invoke(3,
+                            string.Format("VirtualChannelOpen() failed: {0}", ex));
+                        _mChannelHandle = 0;
                     }
                 }
             }
 
             public void InitEventProc(uint serverId, string sessionToken, uint rc)
             {
-                CallbackObject.ThreadMessage?.Invoke(3, "InitEventProc()");
+                _callbackObject.ThreadMessage?.Invoke(3, "InitEventProc()");
             }
 
             public void ReadEventProc(uint serverId, string sessionToken, uint channelHandle, uint eventType,
                 Array eventData, uint totalLength, uint dataFlags)
             {
-                VirtualChannelStructures.ChannelEvents currentEventType =
+                var currentEventType =
                     (VirtualChannelStructures.ChannelEvents)eventType;
-                VirtualChannelStructures.ChannelFlags cf =
+                var cf =
                     (VirtualChannelStructures.ChannelFlags)dataFlags;
-                CallbackObject.ThreadMessage?.Invoke(3,
-                    "ReadEventProc(): " + currentEventType.ToString() + " - Flags: " + cf.ToString() + " - Length: " +
+                _callbackObject.ThreadMessage?.Invoke(3,
+                    "ReadEventProc(): " + currentEventType + " - Flags: " + cf + " - Length: " +
                     totalLength);
 
-                bool isFirst = (dataFlags & (uint)VirtualChannelStructures.ChannelFlags.First) != 0;
-                bool isLast = (dataFlags & (uint)VirtualChannelStructures.ChannelFlags.Last) != 0;
+                var isFirst = (dataFlags & (uint)VirtualChannelStructures.ChannelFlags.First) != 0;
+                var isLast = (dataFlags & (uint)VirtualChannelStructures.ChannelFlags.Last) != 0;
 
                 if (isFirst)
                 {
-                    mPingTestMsg = new Byte[totalLength];
-                    mPingTestCurLen = 0;
+                    _mPingTestMsg = new byte[totalLength];
+                    _mPingTestCurLen = 0;
                 }
 
-                eventData.CopyTo(mPingTestMsg, mPingTestCurLen);
-                mPingTestCurLen += eventData.Length;
+                eventData.CopyTo(_mPingTestMsg, _mPingTestCurLen);
+                _mPingTestCurLen += eventData.Length;
 
                 if (isLast)
                 {
-                    if (totalLength != mPingTestMsg.Length)
+                    if (totalLength != _mPingTestMsg.Length)
                     {
-                        CallbackObject.ThreadMessage?.Invoke(3,
+                        _callbackObject.ThreadMessage?.Invoke(3,
                             "Received {mPingTestMsg.Length} bytes but expected {totalLength} bytes!");
                     }
 
-                    string message = BinaryConverters.BinaryToString(mPingTestMsg);
-                    ChannelCommand cc = JsonConvert.DeserializeObject<ChannelCommand>(message);
-                    CallbackObject.ThreadMessage?.Invoke(3,
+                    var message = BinaryConverters.BinaryToString(_mPingTestMsg);
+                    var cc = JsonConvert.DeserializeObject<ChannelCommand>(message);
+                    _callbackObject.ThreadMessage?.Invoke(3,
                         "Received: " + cc.CommandType + " = " +
-                        BinaryConverters.BinaryToString(mPingTestMsg));
+                        BinaryConverters.BinaryToString(_mPingTestMsg));
 
                     try
                     {
                         switch (cc.CommandType)
                         {
                             case CommandType.SetVolume:
-                                JObject jo = (JObject)cc.CommandParameters;
-                                VolumeStatus sv = jo.ToObject<VolumeStatus>();
-                                CallbackObject.SetVolumeStatus(sv);
+                                var jo = (JObject)cc.CommandParameters;
+                                var sv = jo.ToObject<VolumeStatus>();
+                                _callbackObject.SetVolumeStatus(sv);
                                 HorizonClientVirtualChannel.VirtualChannelWrite(serverId, sessionToken, channelHandle,
                                     BinaryConverters.StringToBinary(
                                         JsonConvert.SerializeObject(new ChannelResponse())));
@@ -252,144 +243,26 @@ namespace VMware.Horizon.VirtualChannel.Client
                             case CommandType.GetVolume:
                                 HorizonClientVirtualChannel.VirtualChannelWrite(serverId, sessionToken, channelHandle,
                                     BinaryConverters.StringToBinary(
-                                        JsonConvert.SerializeObject(CallbackObject.GetVolume())));
-                                break;
-                            default:
+                                        JsonConvert.SerializeObject(_callbackObject.GetVolume())));
                                 break;
                         }
                     }
                     catch (Exception ex)
                     {
-                        CallbackObject.ThreadMessage?.Invoke(3,
-                            string.Format("VirtualChannelWrite failed: {0}", ex.ToString()));
+                        _callbackObject.ThreadMessage?.Invoke(3,
+                            string.Format("VirtualChannelWrite failed: {0}", ex));
                     }
                 }
             }
-
-            uint mChannelHandle = 0;
-            Byte[] mPingTestMsg = null;
-            int mPingTestCurLen = 0;
-            Byte[] mServerPingFragment = new byte[] { 0x50 /* 'P' */, 0x69 /* 'i' */, 0x6E /* 'n' */, 0x67 /* 'g' */ };
-            Byte[] mClientPingFragment = new byte[] { 0x50 /* 'P' */, 0x6F /* 'o' */, 0x6E /* 'n' */, 0x67 /* 'g' */ };
         }
 
         public class VMwareHorizonClientEvents : IVMwareHorizonClientEvents5
         {
-            public class Helpers
-            {
-                [Flags]
-                public enum SupportedProtocols
-                {
-                    VmwHorizonClientProtocol_Default = 0,
-                    VmwHorizonClientProtocol_RDP = 1,
-                    VmwHorizonClientProtocol_PCoIP = 2,
-                    VmwHorizonClientProtocol_Blast = 4
-                }
-
-                [Flags]
-                public enum LaunchItemType
-                {
-                    VmwHorizonLaunchItem_HorizonDesktop = 0,
-                    VmwHorizonLaunchItem_HorizonApp = 1,
-                    VmwHorizonLaunchItem_XenApp = 2,
-                    VmwHorizonLaunchItem_SaaSApp = 3,
-                    VmwHorizonLaunchItem_HorizonAppSession = 4,
-                    VmwHorizonLaunchItem_DesktopShadowSession = 5,
-                    VmwHorizonLaunchItem_AppShadowSession = 6
-                }
-
-                public class launchItem
-                {
-                    public string name { get; set; }
-
-                    public string id { get; set; }
-
-                    [JsonConverter(typeof(StringEnumConverter))]
-                    public LaunchItemType type { get; set; }
-
-                    [JsonConverter(typeof(StringEnumConverter))]
-                    public SupportedProtocols supportedProtocols { get; set; }
-
-                    [JsonConverter(typeof(StringEnumConverter))]
-                    public VmwHorizonClientProtocol defaultProtocol { get; set; }
-
-                    public launchItem(IVMwareHorizonClientLaunchItemInfo item)
-                    {
-                        name = item.name;
-                        id = item.id;
-                        type = (LaunchItemType)item.type;
-                        supportedProtocols = (SupportedProtocols)item.supportedProtocols;
-                        defaultProtocol = item.defaultProtocol;
-                    }
-                }
-
-                public class LaunchItem2
-                {
-                    public string name { get; set; }
-
-                    public string id { get; set; }
-
-                    [JsonConverter(typeof(StringEnumConverter))]
-                    public LaunchItemType type { get; set; }
-
-                    [JsonConverter(typeof(StringEnumConverter))]
-                    public SupportedProtocols supportedProtocols { get; set; }
-
-                    [JsonConverter(typeof(StringEnumConverter))]
-                    public VmwHorizonClientProtocol defaultProtocol { get; set; }
-
-                    public uint hasRemotableAssets { get; set; }
-
-                    public LaunchItem2(IVMwareHorizonClientLaunchItemInfo2 i)
-                    {
-                        name = i.name;
-                        id = i.id;
-                        type = (LaunchItemType)i.type;
-                        supportedProtocols = (SupportedProtocols)i.supportedProtocols;
-                        defaultProtocol = i.defaultProtocol;
-                        hasRemotableAssets = i.hasRemotableAssets;
-                    }
-                }
-
-
-                public static List<launchItem> GetLaunchItems(Array ItemList)
-                {
-                    List<launchItem> returnList = new List<launchItem>();
-                    foreach (var item in ItemList)
-                    {
-                        returnList.Add(new launchItem((IVMwareHorizonClientLaunchItemInfo)item));
-                    }
-
-                    return returnList;
-                }
-
-                public static List<LaunchItem2> GetLaunchItems2(Array ItemList)
-                {
-                    List<LaunchItem2> returnList = new List<LaunchItem2>();
-                    foreach (var item in ItemList)
-                    {
-                        returnList.Add(new LaunchItem2((IVMwareHorizonClientLaunchItemInfo2)item));
-                    }
-
-                    return returnList;
-                }
-            }
-
-            private HorizonMonitor CallbackObject;
+            private readonly HorizonMonitor _callbackObject;
 
             public VMwareHorizonClientEvents(HorizonMonitor callback)
             {
-                CallbackObject = callback;
-            }
-
-            private void DispatchMessage(int severity, string message)
-            {
-                CallbackObject.ThreadMessage?.Invoke(severity, message);
-            }
-
-            private string SerialiseObject(object Value)
-            {
-                return JsonConvert.SerializeObject(Value, Formatting.Indented);
+                _callbackObject = callback;
             }
 
             public void OnStarted()
@@ -404,7 +277,7 @@ namespace VMware.Horizon.VirtualChannel.Client
 
             public void OnConnecting(object serverInfo)
             {
-                IVMwareHorizonClientServerInfo Info = (IVMwareHorizonClientServerInfo)serverInfo;
+                var Info = (IVMwareHorizonClientServerInfo)serverInfo;
                 DispatchMessage(3, string.Format("Connecting, Server Address: {0}, ID: {1}, Type:{2} ",
                     Info.serverAddress, Info.serverId, Info.serverType.ToString()));
             }
@@ -460,8 +333,8 @@ namespace VMware.Horizon.VirtualChannel.Client
                 foreach (var item in Items)
                 {
                     DispatchMessage(3,
-                        String.Format("Launch Item: Server ID: {0}, Name: {1}, Type: {2}, ID: {3}", serverId, item.name,
-                            item.type.ToString(), item.id));
+                        string.Format("Launch Item: Server ID: {0}, Name: {1}, Type: {2}, ID: {3}", serverId, item.Name,
+                            item.Type.ToString(), item.Id));
                 }
             }
 
@@ -594,8 +467,116 @@ namespace VMware.Horizon.VirtualChannel.Client
                 foreach (var item in Items)
                 {
                     DispatchMessage(3,
-                        String.Format("Launch Item: Server ID: {0}, Name: {1}, Type: {2}, ID: {3}, Remotable: {4}",
-                            serverId, item.name, item.type.ToString(), item.id, item.hasRemotableAssets));
+                        string.Format("Launch Item: Server ID: {0}, Name: {1}, Type: {2}, ID: {3}, Remotable: {4}",
+                            serverId, item.Name, item.Type.ToString(), item.Id, item.HasRemotableAssets));
+                }
+            }
+
+            private void DispatchMessage(int severity, string message)
+            {
+                _callbackObject.ThreadMessage?.Invoke(severity, message);
+            }
+
+            private string SerialiseObject(object value) =>
+                JsonConvert.SerializeObject(value, Formatting.Indented);
+
+            public class Helpers
+            {
+                [Flags]
+                public enum LaunchItemType
+                {
+                    VmwHorizonLaunchItem_HorizonDesktop = 0,
+                    VmwHorizonLaunchItem_HorizonApp = 1,
+                    VmwHorizonLaunchItem_XenApp = 2,
+                    VmwHorizonLaunchItem_SaaSApp = 3,
+                    VmwHorizonLaunchItem_HorizonAppSession = 4,
+                    VmwHorizonLaunchItem_DesktopShadowSession = 5,
+                    VmwHorizonLaunchItem_AppShadowSession = 6
+                }
+
+                [Flags]
+                public enum SupportedProtocols
+                {
+                    VmwHorizonClientProtocol_Default = 0,
+                    VmwHorizonClientProtocol_RDP = 1,
+                    VmwHorizonClientProtocol_PCoIP = 2,
+                    VmwHorizonClientProtocol_Blast = 4
+                }
+
+
+                public static List<LaunchItem> GetLaunchItems(Array ItemList)
+                {
+                    var returnList = new List<LaunchItem>();
+                    foreach (var item in ItemList)
+                    {
+                        returnList.Add(new LaunchItem((IVMwareHorizonClientLaunchItemInfo)item));
+                    }
+
+                    return returnList;
+                }
+
+                public static List<LaunchItem2> GetLaunchItems2(Array ItemList)
+                {
+                    var returnList = new List<LaunchItem2>();
+                    foreach (var item in ItemList)
+                    {
+                        returnList.Add(new LaunchItem2((IVMwareHorizonClientLaunchItemInfo2)item));
+                    }
+
+                    return returnList;
+                }
+
+                public class LaunchItem
+                {
+                    public LaunchItem(IVMwareHorizonClientLaunchItemInfo item)
+                    {
+                        Name = item.name;
+                        Id = item.id;
+                        Type = (LaunchItemType)item.type;
+                        SupportedProtocols = (SupportedProtocols)item.supportedProtocols;
+                        DefaultProtocol = item.defaultProtocol;
+                    }
+
+                    public string Name { get; set; }
+
+                    public string Id { get; set; }
+
+                    [JsonConverter(typeof(StringEnumConverter))]
+                    public LaunchItemType Type { get; set; }
+
+                    [JsonConverter(typeof(StringEnumConverter))]
+                    public SupportedProtocols SupportedProtocols { get; set; }
+
+                    [JsonConverter(typeof(StringEnumConverter))]
+                    public VmwHorizonClientProtocol DefaultProtocol { get; set; }
+                }
+
+                public class LaunchItem2
+                {
+                    public LaunchItem2(IVMwareHorizonClientLaunchItemInfo2 i)
+                    {
+                        Name = i.name;
+                        Id = i.id;
+                        Type = (LaunchItemType)i.type;
+                        SupportedProtocols = (SupportedProtocols)i.supportedProtocols;
+                        DefaultProtocol = i.defaultProtocol;
+                        HasRemotableAssets = i.hasRemotableAssets;
+                    }
+
+                    public string Name { get; set; }
+
+                    public string Id { get; set; }
+
+                    [JsonConverter(typeof(StringEnumConverter))]
+                    public LaunchItemType Type { get; set; }
+
+                    [JsonConverter(typeof(StringEnumConverter))]
+                    public SupportedProtocols SupportedProtocols { get; set; }
+
+                    [JsonConverter(typeof(StringEnumConverter))]
+                    public VmwHorizonClientProtocol DefaultProtocol { get; set; }
+
+                    public uint HasRemotableAssets { get; set; }
                 }
             }
         }
