@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VMware.Horizon.VirtualChann
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VMware.Horizon.VirtualChannel.AgentAPI", "Libraries\VMware.Horizon.VirtualChannel.AgentAPI\VMware.Horizon.VirtualChannel.AgentAPI.csproj", "{87EB83BD-5095-4B28-A281-AE45E208C6DD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VMware.Horizon.Interop", "Libraries\VMware.Horizon.Interop\VMware.Horizon.Interop.csproj", "{EA9E8719-59EA-4D5A-8E30-B111AF870F84}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -47,6 +49,10 @@ Global
 		{87EB83BD-5095-4B28-A281-AE45E208C6DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{87EB83BD-5095-4B28-A281-AE45E208C6DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{87EB83BD-5095-4B28-A281-AE45E208C6DD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EA9E8719-59EA-4D5A-8E30-B111AF870F84}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EA9E8719-59EA-4D5A-8E30-B111AF870F84}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EA9E8719-59EA-4D5A-8E30-B111AF870F84}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EA9E8719-59EA-4D5A-8E30-B111AF870F84}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -56,6 +62,7 @@ Global
 		{2D6DAFC7-FEF4-40DB-BA6E-DA25DF71B53C} = {03190086-EAB3-4E37-BAD7-20560EEF5B2F}
 		{80AD77A0-B6D9-4C1B-81DD-8D7757CFD572} = {03190086-EAB3-4E37-BAD7-20560EEF5B2F}
 		{87EB83BD-5095-4B28-A281-AE45E208C6DD} = {03190086-EAB3-4E37-BAD7-20560EEF5B2F}
+		{EA9E8719-59EA-4D5A-8E30-B111AF870F84} = {03190086-EAB3-4E37-BAD7-20560EEF5B2F}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A096C19D-4888-4DDC-83B5-F626A6815BE7}

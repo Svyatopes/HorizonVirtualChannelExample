@@ -5,8 +5,8 @@ using NAudio.CoreAudioApi;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
+using VMware.Horizon.Interop;
 using VMware.Horizon.VirtualChannel.RDPVCBridgeInterop;
-using VMwareHorizonClientController;
 using static VMware.Horizon.VirtualChannel.PipeMessages.V1;
 
 namespace VMware.Horizon.VirtualChannel.Client
